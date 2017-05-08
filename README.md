@@ -188,6 +188,8 @@ Cache invalidation is always tricky, so in the future, browsers will use "cache 
 
 More on [updating](http://stackoverflow.com/questions/38843970/service-worker-javascript-update-frequency-every-24-hours/38854905#38854905) (Jeff Posnick)
 
+And caching [best practices](https://jakearchibald.com/2016/caching-best-practices) (Jake Archibald)
+
 ## Invalidate your ServiceWorker when updated
 
 The ServiceWorker will be re-installed if it is byte different from the previous version. A simple setup is to treat the ServiceWorker file as a boot loader by using `importScripts` with versioned files:
