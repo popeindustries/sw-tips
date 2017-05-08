@@ -1,8 +1,6 @@
-## How to avoid the zombie apocalypse
+# Tips for working with `ServiceWorker` (extracted from a talk at JSConf.eu)
 
-...or, things I wish I knew before I started
-
-### async/await
+## async/await
 
 understand how promises work, but use `async/await` instead. The ServiceWorker API takes promise use to new extremes, so using `async/await` can help make things way more legible:
 
@@ -17,7 +15,7 @@ Although very few browsers support native `async/await`, it's just syntactic sug
 
 Using Babel with the [async-to-generator](https://babeljs.io/docs/plugins/transform-async-to-generator/) plugin will add minimal extra overhead, but be aware that this code cannot be minified with Uglify-js, which only supports ES5 input source. [Babili](https://github.com/babel/babili) is another plugin for Babel that you can use for minification instead.
 
-### Don't register the ServiceWorker while the page is loading
+## Don't register the ServiceWorker while the page is loading
 
 Bandwidth and cpu time must be shared while the cache is being filled during the ServiceWorker's `installation` phase, so wait for the `window.onload` event (or some other signal) before registering:
 
@@ -31,7 +29,7 @@ if ('serviceWorker' in navigator) {
 
 All about [registration](https://developers.google.com/web/fundamentals/instant-and-offline/service-worker/registration) (Jeff Posnick).
 
-### Know your dependencies
+## Know your dependencies
 
 During the `installation` phase, passing a promise to `event.waitUntil` will delay ServiceWorker activation until resolved. However, if rejected, the ServiceWorker will be thrown away and marked `redundant`.
 
@@ -52,7 +50,7 @@ async function install() {
 
 All about [lifecycle](https://developers.google.com/web/fundamentals/instant-and-offline/service-worker/lifecycle) (Jake Archibald)
 
-### Cache smarter
+## Cache smarter
 
 When upgrading a ServiceWorker, it's common to pre-cache assets in a new, uniquely named cache before deleting old ones during the `activation` phase:
 
@@ -111,7 +109,7 @@ async function cacheVersioned(version, assets) {
 }
 ```
 
-### Avoid forcing activation for major changes
+## Avoid forcing activation for major changes
 
 Forcing activation after an update can break already connected clients if the new ServiceWorker behaves very differently from the old one.
 
@@ -139,7 +137,7 @@ navigator.serviceWorker.addEventListener('message', (event) => {
 });
 ```
 
-### Use a library for messaging
+## Use a library for messaging
 
 Sending messages between a ServiceWorker and it's clients can be a little unintuitive if you haven't worked with the `postMessage` API before. Using a messaging library like [Swivel](https://github.com/bevacqua/swivel) can help:
 
@@ -158,7 +156,7 @@ swivel.emit('data', ...data);
 swivel.broadcast('data', ...data);
 ```
 
-### Never rename the ServiceWorker script file
+## Never rename the ServiceWorker script file
 
 Once a ServiceWorker has been installed and activated, it will need to be updated. If the html file that registers the ServiceWorker is itself cached, it will be difficult to install a new ServiceWorker with a different name.
 
@@ -171,7 +169,7 @@ navigator.serviceWorker.register('sw-v1.js');
 navigator.serviceWorker.register('sw.js');
 ```
 
-### Set correct cache headers
+## Set correct cache headers
 
 If ServiceWorker script filenames are static, and the browser fetches the script from the browser cache before going to the network, you will need to correctly set `cache-control` headers to prevent the browser from caching outdated versions.
 
@@ -190,7 +188,7 @@ Cache invalidation is always tricky, so in the future, browsers will use "cache 
 
 More on [updating](http://stackoverflow.com/questions/38843970/service-worker-javascript-update-frequency-every-24-hours/38854905#38854905) (Jeff Posnick)
 
-### Invalidate your ServiceWorker when updated
+## Invalidate your ServiceWorker when updated
 
 The ServiceWorker will be re-installed if it is byte different from the previous version. A simple setup is to treat the ServiceWorker file as a boot loader by using `importScripts` with versioned files:
 
@@ -200,7 +198,7 @@ self.importScripts('vendor-sw-v1', 'index-sw-v1');
 // ...that's all you need!
 ```
 
-### Add a feature flag/kill switch
+## Add a feature flag/kill switch
 
 In the event of disaster, having an easy way to disable existing ServiceWorkers can be a lifesaver. Add a feature flag to control unregistration:
 
@@ -252,7 +250,7 @@ self.addEventListener('activate', (event) => {
 
 More on [kill switches](http://stackoverflow.com/questions/33986976/how-can-i-remove-a-buggy-service-worker-or-implement-a-kill-switch/38980776#38980776) (Jeff Posnick)
 
-### Don't cache bad responses
+## Don't cache bad responses
 
 Always check the `ok` property of the response object returned from `fetch()` before you add it to your cache. HTTP error response codes (4xx, 5xx) won't cause the promise to reject:
 
@@ -271,20 +269,21 @@ async function onFetch(event) {
 }
 ```
 
-### Don't store global state
+## Don't store global state
 
 Storing global state in a ServiceWorker is bad. Code outside of event handlers is run each time a ServiceWorker is started, but they're stopped and started many times over their lifetime in order to save battery and other resources, and that global state will be destroyed at unexpected times:
 
 ```js
-// Don't do this!
+// Declared on each start
 let db;
 
 self.addEventListener('install', event => {
-  // Open database connection
+  // Assigned only when installed on first start
   db = openDB();
 });
 self.addEventListener('fetch', event => {
   event.respondWith(
+    // Probably doesn't exist
     db.readStuff().then(/*...*/)
   );
 });
@@ -292,7 +291,7 @@ self.addEventListener('fetch', event => {
 
 More about the risks [here](http://stackoverflow.com/questions/38835273/when-does-code-in-a-service-worker-outside-of-an-event-handler-run/38835274#38835274) (Jeff Posnick)
 
-### Guard against missing APIs
+## Guard against missing APIs
 
 A number of API methods were added in later browser versions, so it's wise to test whether they exist before calling them:
 
@@ -317,7 +316,7 @@ cache.addAll()
 cache.matchAll()
 ```
 
-### Test your ServiceWorker
+## Test your ServiceWorker
 
 Because of the installation lifecycle and the special environment they run in, ServiceWorkers are very difficult to test. As always, running tests in real browsers, with real code, will give the most realistic results.
 
@@ -376,12 +375,15 @@ With it you can:
 
 ```js
 it('should recycle assets on upgrade', async () => {
+  // Load the ServiceWorker file
   await sw.register('./fixtures/cache-smarter.js');
-  // Fill existing versioned cache
+  // Create and populate an old version of the cache
   const cache = await sw.scope.caches.open('version-1');
   await cache.put(new Request('bar.js'),
     new Response('bar'));
+  // Trigger the "installation" phase
   await sw.trigger('install');
+  // Read from the cache and verify
   const bar =
     await sw.scope.caches.match(new Request('bar.js'));
   const body = await bar.text();
@@ -392,7 +394,7 @@ it('should recycle assets on upgrade', async () => {
 });
 ```
 
-### Use a ServiceWorker generator tool
+## Use a ServiceWorker generator tool
 
 If you don't want to get your hands dirty with the details, you can use one of several ServiceWorker generator tools and libraries:
 
