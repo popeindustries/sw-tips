@@ -169,6 +169,8 @@ navigator.serviceWorker.register('sw-v1.js');
 navigator.serviceWorker.register('sw.js');
 ```
 
+**Update from @ithinkihaveacat**: there are [certain circumstances](https://github.com/popeindustries/sw-tips/issues/1) where you may want to install a different ServiceWorker under a new name.
+
 ## Set correct cache headers
 
 If ServiceWorker script filenames are static, and the browser fetches the script from the browser cache before going to the network, you will need to correctly set `cache-control` headers to prevent the browser from caching outdated versions.
