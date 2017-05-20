@@ -1,4 +1,4 @@
-# Tips for working with `ServiceWorker` (extracted from a talk at JSConf.eu)
+# Tips for working with `ServiceWorker` (extracted from a [talk](https://youtu.be/CPP9ew4Co0M) at JSConf.eu)
 
 ## async/await
 
