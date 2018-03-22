@@ -75,10 +75,12 @@ Create more than one cache to separate versioned assets from those that won't ch
 
 ```js
 self.addEventListener('install', event => {
-  event.waitUntil(Promise.all([
-    cacheStatic(ASSETS_STATIC),
-    cacheVersioned('2', ASSETS_VERSIONED)
-  ]));
+  event.waitUntil(
+    Promise.all([
+      cacheStatic(ASSETS_STATIC),
+      cacheVersioned('2', ASSETS_VERSIONED)
+    ])
+  );
 });
 
 async function cacheStatic(assets) {
@@ -97,14 +99,17 @@ async function cacheVersioned(version, assets) {
   const exists = await caches.has(`version-${version}`);
   if (!exists) {
     const requests = assets.map(asset => new Request(asset));
-    const preCachedResponses =
-      await Promise.all(requests.map(req => caches.match(req)));
+    const preCachedResponses = await Promise.all(
+      requests.map(req => caches.match(req))
+    );
     const cache = await caches.open(`version-${version}`);
-    return Promise.all(requests.map((request, idx) => {
-      return preCachedResponses[idx]
-        ? cache.put(request, preCachedResponses[idx].clone())
-        : cache.add(request);
-    }));
+    return Promise.all(
+      requests.map((request, idx) => {
+        return preCachedResponses[idx]
+          ? cache.put(request, preCachedResponses[idx].clone())
+          : cache.add(request);
+      })
+    );
   }
 }
 ```
@@ -116,23 +121,44 @@ Forcing activation after an update can break already connected clients if the ne
 Avoid calling `self.skipWaiting()` after a major change, and consider prompting the user to trigger a refresh instead:
 
 ```js
-// ServiceWorker
-self.addEventListener('install', event => {
-  event.waitUntil(install());
+/* index.html */
+navigator.serviceWorker.register('sw.js').then(reg => {
+  handleUpgrade(reg);
 });
 
-async function install() {
-  // Install stuff, then...
-  const allClients = await clients.matchAll();
-  allClients.forEach(client => {
-    client.postMessage({ type: 'update' });
+// Handle upgrade to new ServiceWorker
+function handleUpgrade(reg) {
+  function listenForStateChange() {
+    reg.installing.addEventListener('statechange', () => {
+      if (this.state === 'installed') triggerReload(reg);
+    });
+  }
+  if (!reg) return;
+  if (reg.waiting) return triggerReload(reg);
+  if (reg.installing) listenForStateChange();
+  reg.addEventListener('updatefound', listenForStateChange);
+}
+
+function triggerReload(reg) {
+  // Show interactive prompt and trigger skipWaiting
+  showPromptSomehow().then(() => {
+    reg.waiting.postMessage('skipWaiting');
   });
 }
 
-// Browser client
-navigator.serviceWorker.addEventListener('message', (event) => {
-  if (event.data.type == 'update') {
-    // Show interactive prompt and trigger page refresh
+// Reload when new ServiceWorker becomes active
+let reloaded;
+navigator.serviceWorker.addEventListener('controllerchange', () => {
+  if (reloaded) return;
+  reloaded = true;
+  window.location.reload();
+});
+
+/* sw.js */
+// Listen for skipWaiting confirmation from client
+addEventListener('message', msg => {
+  if (msg.data === 'skipWaiting') {
+    self.skipWaiting();
   }
 });
 ```
@@ -212,28 +238,35 @@ if ('serviceWorker' in navigator) {
     if (features.serviceWorker) {
       navigator.serviceWorker.register('sw.js');
     } else {
-      navigator.serviceWorker.getRegistrations()
-        .then((registrations) => {
-          registrations.forEach((registration) => {
-            registration.unregister();
-          });
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        registrations.forEach(registration => {
+          registration.unregister();
         });
+      });
     }
   });
 }
 ```
 
-...keep a no-op ServiceWorker handy for quick deploy:
+...keep a suicide ServiceWorker handy for quick deploy:
 
 ```js
-self.addEventListener('install', event => {
-  self.skipWaiting();
+self.addEventListener('install', event => self.skipWaiting());
+
+self.addEventListener('activate', event => {
+  event.waitUntil(burnDownTheHouse());
 });
 
-self.addEventListener('activate', (event) => {
-  // Delete caches...
-  event.waitUntil(clients.claim());
-});
+async function burnDownTheHouse() {
+  // Unregister
+  self.registration.unregister();
+  // Delete all caches
+  const keys = await self.caches.keys();
+  await Promise.all(keys.map(key => self.caches.delete(key));
+  // Force refresh all windows
+  const clients = await self.clients.matchAll({ type: 'window' });
+  clients.forEach(client => client.navigate(client.url))
+}
 
 // No 'fetch' handler
 ```
@@ -241,15 +274,15 @@ self.addEventListener('activate', (event) => {
 ...or have the ServiceWorker phone home to check it's version, then force an update if outdated:
 
 ```js
-  versionCheck();
+versionCheck();
 
-  async function versionCheck() {
-    const response = await fetch(SW_VERSION_URL);
-    const version = await response.text();
-    if (version !== VERSION) {
-      self.registration.update();
-    }
+async function versionCheck() {
+  const response = await fetch(SW_VERSION_URL);
+  const version = await response.text();
+  if (version !== VERSION) {
+    self.registration.update();
   }
+}
 ```
 
 More on [kill switches](http://stackoverflow.com/questions/33986976/how-can-i-remove-a-buggy-service-worker-or-implement-a-kill-switch/38980776#38980776) (Jeff Posnick)
@@ -309,15 +342,15 @@ The following methods were added in later versions of Chrome, after ServiceWorke
 
 ```js
 // Chrome 42
-self.skipWaiting()
-clients.claim()
+self.skipWaiting();
+clients.claim();
 
 // Chrome 46
-cache.add()
-cache.addAll()
+cache.add();
+cache.addAll();
 
 // Chrome 47
-cache.matchAll()
+cache.matchAll();
 ```
 
 ## Test your ServiceWorker
@@ -347,7 +380,7 @@ describe('ServiceWorker', () => {
 });
 ```
 
-I also released a project for testing ServiceWorkers in Node.js called  [sw-test-env](https://github.com/YR/sw-test-env). It's a little more thorough mock of the ServiceWorker specification, and allows you to run ServiceWorker code in an isolated, sandboxed context:
+I also released a project for testing ServiceWorkers in Node.js called [sw-test-env](https://github.com/YR/sw-test-env). It's a little more thorough mock of the ServiceWorker specification, and allows you to run ServiceWorker code in an isolated, sandboxed context:
 
 ```js
 const { connect, destroy } = require('sw-test-env');
@@ -369,13 +402,13 @@ describe('ServiceWorker', () => {
 
 With it you can:
 
-- inspect the properties of the ServiceWorker scope (`clients`, `caches`, `registration`, etc)
-- manually trigger events (`install`, `activate`, `fetch`, etc)
-- `postMessage` between clients and ServiceWorker instances
-- use `importScripts()`
-- `fetch()` real (or mocked) data
-- use `indexedDB` storage
-- `require()` modules without a build step
+* inspect the properties of the ServiceWorker scope (`clients`, `caches`, `registration`, etc)
+* manually trigger events (`install`, `activate`, `fetch`, etc)
+* `postMessage` between clients and ServiceWorker instances
+* use `importScripts()`
+* `fetch()` real (or mocked) data
+* use `indexedDB` storage
+* `require()` modules without a build step
 
 ```js
 it('should recycle assets on upgrade', async () => {
@@ -383,13 +416,11 @@ it('should recycle assets on upgrade', async () => {
   await sw.register('./fixtures/cache-smarter.js');
   // Create and populate an old version of the cache
   const cache = await sw.scope.caches.open('version-1');
-  await cache.put(new Request('bar.js'),
-    new Response('bar'));
+  await cache.put(new Request('bar.js'), new Response('bar'));
   // Trigger the "installation" phase
   await sw.trigger('install');
   // Read from the cache and verify
-  const bar =
-    await sw.scope.caches.match(new Request('bar.js'));
+  const bar = await sw.scope.caches.match(new Request('bar.js'));
   const body = await bar.text();
 
   expect(bar.ok).to.equal(true);
@@ -402,7 +433,7 @@ it('should recycle assets on upgrade', async () => {
 
 If you don't want to get your hands dirty with the details, you can use one of several ServiceWorker generator tools and libraries:
 
-- [sw-precache](https://github.com/GoogleChrome/sw-precache): build tool to generate a sw.js file with pre-cached assets
-- [sw-toolbox](https://github.com/GoogleChrome/sw-toolbox): library for runtime caching
-- [generate-service-worker](https://github.com/pinterest/service-workers/tree/master/packages/generate-service-worker): build tool to generate sw.js and handle runtime caching
-- [offline-plugin](https://github.com/NekR/offline-plugin/): Webpack plugin to generate sw.js
+* [sw-precache](https://github.com/GoogleChrome/sw-precache): build tool to generate a sw.js file with pre-cached assets
+* [sw-toolbox](https://github.com/GoogleChrome/sw-toolbox): library for runtime caching
+* [generate-service-worker](https://github.com/pinterest/service-workers/tree/master/packages/generate-service-worker): build tool to generate sw.js and handle runtime caching
+* [offline-plugin](https://github.com/NekR/offline-plugin/): Webpack plugin to generate sw.js
